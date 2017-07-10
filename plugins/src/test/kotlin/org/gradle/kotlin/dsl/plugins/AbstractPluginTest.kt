@@ -19,8 +19,9 @@ open class AbstractPluginTest : AbstractIntegrationTest() {
         withFile("settings.gradle", """
             pluginManagement {
                 repositories {
-                    maven { url = uri("$testRepository") }
-                    maven { url = uri("https://jcenter.bintray.com/") }
+                    maven { url = file("$testRepository") }
+                    maven { url = "https://jcenter.bintray.com/" }
+                    maven { url = "https://dl.bintray.com/kotlin/kotlin-dev/" }
                 }
                 resolutionStrategy {
                     eachPlugin {

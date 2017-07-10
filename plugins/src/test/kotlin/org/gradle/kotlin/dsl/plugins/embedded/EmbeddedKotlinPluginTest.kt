@@ -104,7 +104,7 @@ class EmbeddedKotlinPluginTest : AbstractPluginTest() {
             }
 
             repositories {
-                jcenter()
+                maven { url = uri("https://dl.bintray.com/kotlin/kotlin-dev") }
             }
 
             dependencies {
