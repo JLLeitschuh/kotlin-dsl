@@ -30,9 +30,14 @@ import org.gradle.kotlin.dsl.support.compileToJar
 import org.gradle.kotlin.dsl.support.loggerFor
 import org.gradle.kotlin.dsl.support.serviceOf
 
+import org.jetbrains.org.objectweb.asm.ClassReader
+import org.jetbrains.org.objectweb.asm.ClassVisitor
+import org.jetbrains.org.objectweb.asm.Opcodes.*
+
 import java.io.BufferedWriter
 import java.io.File
 import java.util.AbstractMap
+import java.util.jar.JarFile
 
 
 fun accessorsClassPathFor(project: Project, classPath: ClassPath) =
@@ -63,6 +68,98 @@ private
 fun configuredProjectSchemaOf(project: Project) =
     aotProjectSchemaOf(project) ?: jitProjectSchemaOf(project)
 
+
+internal
+sealed class TypeAccessibility {
+    data class Accessible(val type: String) : TypeAccessibility()
+    data class Inaccessible(val type: String, val reasons: List<InaccessibilityReason>) : TypeAccessibility()
+}
+
+internal
+sealed class InaccessibilityReason {
+    data class NonPublic(val type: String) : InaccessibilityReason()
+    data class NonAvailable(val type: String) : InaccessibilityReason()
+}
+
+internal
+fun availableProjectSchemaFor(projectSchema: ProjectSchema<String>, classpath: ClassPath) =
+    projectSchema.map(TypeAvailabilityMapper(classpath)::map)
+
+private
+class TypeAvailabilityMapper(val classpath: ClassPath) {
+
+    private
+    val cache = mutableMapOf<String, List<InaccessibilityReason>>()
+
+    fun map(type: String): TypeAccessibility {
+
+        val failures = classNamesFrom(type).flatMap { className ->
+            cache.computeIfAbsent(className, {
+                listOfNotNull(inaccessibilityReasonFor(className))
+            })
+        }
+        return if (failures.isNotEmpty()) TypeAccessibility.Inaccessible(type, failures) else TypeAccessibility.Accessible(type)
+    }
+
+    private
+    fun inaccessibilityReasonFor(className: String): InaccessibilityReason? {
+        val classFilePath = className.replace(".", "/") + ".class"
+        classpath.asFiles.forEach { classpathEntry ->
+            when {
+                classpathEntry.isFile -> {
+                    JarFile(classpathEntry).use { jar ->
+                        jar.getJarEntry(classFilePath)?.let { jarEntry ->
+                            jar.getInputStream(jarEntry).use { jarInput ->
+                                if (isPublicClass(jarInput.readBytes())) return null
+                                return InaccessibilityReason.NonPublic(className)
+                            }
+                        }
+                    }
+                }
+                classpathEntry.isDirectory -> {
+                    val file = File(classpathEntry, classFilePath)
+                    if (file.isFile) {
+                        if (isPublicClass(file.readBytes())) return null
+                        return InaccessibilityReason.NonPublic(className)
+                    }
+                }
+            }
+        }
+        return InaccessibilityReason.NonAvailable(className)
+    }
+
+    // TODO Exclude primitives
+    fun classNamesFrom(typeString: String): List<String> =
+        typeString.split(Regex("[<,> ]")).filter { it.isNotBlank() }
+
+    private
+    fun isPublicClass(classBytes: ByteArray): Boolean {
+        val cr = ClassReader(classBytes)
+        var isPublic = false
+        cr.accept(object : ClassVisitor(ASM5) {
+            override fun visit(version: Int, access: Int, name: String?, signature: String?, superName: String?, interfaces: Array<out String>?) {
+                isPublic = access.and(ACC_PUBLIC) != 0
+            }
+        }, ClassReader.SKIP_CODE + ClassReader.SKIP_DEBUG + ClassReader.SKIP_FRAMES)
+        return isPublic
+    }
+}
+
+internal
+fun nonAvailable(type: String) =
+    inaccessible(type, InaccessibilityReason.NonAvailable(type))
+
+internal
+fun nonPublic(type: String) =
+    inaccessible(type, InaccessibilityReason.NonPublic(type))
+
+internal
+fun accessible(type: String) =
+    TypeAccessibility.Accessible(type)
+
+internal
+fun inaccessible(type: String, vararg reasons: InaccessibilityReason) =
+    TypeAccessibility.Inaccessible(type, reasons.toList())
 
 private
 fun aotProjectSchemaOf(project: Project) =
