@@ -248,6 +248,41 @@ class ProjectSchemaAccessorsIntegrationTest : AbstractIntegrationTest() {
         assertThat(rootTasks, allOf(containsString("kotlinDslAccessorsReport"), containsString("kotlinDslAccessorsSnapshot")))
     }
 
+    @Test
+    fun `accessors for extensions with types not available to the build script classpath are skipped`() {
+
+        withFile("init.gradle", """
+            initscript {
+                repositories {
+                    maven { url "https://plugins.gradle.org/m2" }
+                }
+                dependencies {
+                    classpath "com.gradle:build-scan-plugin:1.8"
+                }
+            }
+            rootProject { prj ->
+                apply plugin: "base"
+                apply plugin: initscript.classLoader.loadClass("com.gradle.scan.plugin.BuildScanPlugin")
+                buildScan {
+                    publishAlways()
+                }
+            }
+        """)
+
+        withBuildScript("""
+            plugins { application }
+            base {}
+            application {}
+            buildScan {}
+        """)
+
+        val result = buildAndFail("help", "-I", "init.gradle")
+
+        assertThat(result.output, not(containsString("Unresolved reference: base")))
+        assertThat(result.output, not(containsString("Unresolved reference: application")))
+        assertThat(result.output, containsString("Unresolved reference: buildScan"))
+    }
+
     private
     fun setOfAutomaticAccessorsFor(plugins: Set<String>): File {
         val script = "plugins {\n${plugins.joinToString(separator = "\n")}\n}"

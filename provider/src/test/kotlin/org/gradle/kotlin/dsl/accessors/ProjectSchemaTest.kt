@@ -16,6 +16,8 @@ import java.lang.reflect.Array
 
 class ProjectSchemaTest {
 
+    val loader = DynamicClassLoader()
+
     @Test
     fun `#accessibleProjectSchemaFrom rejects non-public or synthetic types`() {
 
@@ -29,7 +31,8 @@ class ProjectSchemaTest {
                     "publicNonSyntheticInstance" to instanceOf(publicNonSyntheticClass),
                     "nonPublicInstance" to instanceOf(nonPublicClass),
                     "syntheticInstance" to instanceOf(syntheticClass)),
-                configurationNames = emptyList()),
+                configurationNames = emptyList(),
+                loader = loader),
             equalTo(
                 ProjectSchema(
                     extensions = mapOf("publicNonSynthetic" to publicNonSyntheticType),
@@ -100,7 +103,7 @@ class ProjectSchemaTest {
     }
 
     fun defineClass(name: String, vararg modifiers: Int): Class<*> =
-        DynamicClassLoader().defineClass(name, classBytesOf(name, modifiers))
+        loader.defineClass(name, classBytesOf(name, modifiers))
 
     fun classBytesOf(name: String, modifiers: IntArray): ByteArray =
         ClassWriter(0).run {
