@@ -249,7 +249,7 @@ class ProjectSchemaAccessorsIntegrationTest : AbstractIntegrationTest() {
     }
 
     @Test
-    fun `accessors for extensions with types not available to the build script classpath are skipped`() {
+    fun `given extension with inaccessible type, its accessor is typed Any`() {
 
         withFile("init.gradle", """
             initscript {
@@ -260,7 +260,7 @@ class ProjectSchemaAccessorsIntegrationTest : AbstractIntegrationTest() {
                     classpath "com.gradle:build-scan-plugin:1.8"
                 }
             }
-            rootProject { prj ->
+            rootProject {
                 apply plugin: "base"
                 apply plugin: initscript.classLoader.loadClass("com.gradle.scan.plugin.BuildScanPlugin")
                 buildScan {
@@ -270,17 +270,16 @@ class ProjectSchemaAccessorsIntegrationTest : AbstractIntegrationTest() {
         """)
 
         withBuildScript("""
-            plugins { application }
-            base {}
-            application {}
-            buildScan {}
+
+            inline fun <reified T> typeOf(t: T) = T::class.simpleName
+
+            buildScan {
+                println("Type of `buildScan` receiver is " + typeOf(this@buildScan))
+            }
         """)
 
-        val result = buildAndFail("help", "-I", "init.gradle")
-
-        assertThat(result.output, not(containsString("Unresolved reference: base")))
-        assertThat(result.output, not(containsString("Unresolved reference: application")))
-        assertThat(result.output, containsString("Unresolved reference: buildScan"))
+        val result = build("help", "-I", "init.gradle")
+        assertThat(result.output, containsString("Type of `buildScan` receiver is Any"))
     }
 
     private

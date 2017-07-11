@@ -56,27 +56,21 @@ fun schemaFor(project: Project): ProjectSchema<TypeOf<*>> =
     accessibleProjectSchemaFrom(
         project.extensions.schema,
         project.convention.plugins,
-        project.configurations.names.toList(),
-        project.buildscript.classLoader)
+        project.configurations.names.toList())
 
 
 internal
 fun accessibleProjectSchemaFrom(
     extensionSchema: Map<String, TypeOf<*>>,
     conventionPlugins: Map<String, Any>,
-    configurationNames: List<String>,
-    loader: ClassLoader): ProjectSchema<TypeOf<*>> =
+    configurationNames: List<String>): ProjectSchema<TypeOf<*>> =
 
     ProjectSchema(
         extensions = extensionSchema
-            .filterKeys(::isPublic)
-            .filterValues(::isAccessible)
-            .filterValues({ isLoadableBy(it, loader) }),
+            .filterKeys(::isPublic),
         conventions = conventionPlugins
             .filterKeys(::isPublic)
-            .mapValues { typeOf(it.value::class.java) }
-            .filterValues(::isAccessible)
-            .filterValues({ isLoadableBy(it, loader) }),
+            .mapValues { typeOf(it.value::class.java) },
         configurations = configurationNames
             .filter(::isPublic))
 
@@ -84,46 +78,6 @@ fun accessibleProjectSchemaFrom(
 internal
 fun isPublic(name: String): Boolean =
     !name.startsWith("_")
-
-
-// TODO:pm this needs to be added to TypeOf in Gradle proper
-private
-val TypeOf<*>.raw: TypeOf<*>
-    get() {
-        val field = TypeOf::class.java.getDeclaredField("type")
-        field.isAccessible = true
-        val modelType = field.get(this) as org.gradle.model.internal.type.ModelType<*>
-        return TypeOf.typeOf(modelType.rawClass)
-    }
-
-internal
-fun isLoadableBy(type: TypeOf<*>, loader: ClassLoader): Boolean =
-    type.run {
-        when {
-            isParameterized -> isLoadableBy(parameterizedTypeDefinition, loader) && actualTypeArguments.all({ isLoadableBy(it, loader) })
-            isArray -> isLoadableBy(componentType, loader)
-            isSynthetic -> false
-            else -> {
-                try {
-                    loader.loadClass(type.raw.toString())
-                    return true
-                } catch(ex: Exception) {
-                    return false
-                }
-            }
-        }
-    }
-
-internal
-fun isAccessible(type: TypeOf<*>): Boolean =
-    type.run {
-        when {
-            isParameterized -> isAccessible(parameterizedTypeDefinition) && actualTypeArguments.all(::isAccessible)
-            isArray -> isAccessible(componentType)
-            isSynthetic -> false
-            else -> isPublic
-        }
-    }
 
 
 internal
@@ -184,4 +138,3 @@ val primitiveTypeStrings =
         "float" to "Float",
         "java.lang.Double" to "Double",
         "double" to "Double")
-
